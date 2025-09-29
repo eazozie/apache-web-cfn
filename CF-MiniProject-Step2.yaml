@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Deploy Apache Web Server on EC2, referencing SampleNetworkCrossStack resources.
+
+#Listing the parameters
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName #Specifiyng the SSH key to use for the EC2 instance
+    Description: Select the available keypair in the console
+
+  InstanceType:
+    Type: String
+    Default: t2.micro #using t2.micro as default while being allowed to select others listed below
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t3.micro
+      - t3.small
+    Description: EC2 instance type for the web server.
+
+  #This parameter allows to pull resources from another stack - Cross-Stack Functionality
+  NetworkStackName:
+    Type: String
+    Default: SampleNetworkCrossStack #referencing a particular stack in my account called SampleNetworkCrossStack
+    Description: Name of the network stack to reference.
+
+Mappings:
+  RegionMap:
+    us-west-2:
+      AMI: ami-06a974f9b8a97ecf2 # Amazon Linux 2 us-west-2
+    us-east-1:
+      AMI: ami-0c2b8ca1dad447f8a
+    us-east-2:
+      AMI: ami-024e6efaf93d85776
+
+Resources:
+  WebServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AMI
+      SubnetId: !ImportValue
+        Fn::Sub: ${NetworkStackName}-SubnetID
+      SecurityGroupIds:
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-SecurityGroupID
+      UserData: !Base64
+        Fn::Sub: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "Cross Stack performed by Ebube Azozie" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: Ebube-Instance-from-SampleNetworkCrossStack
+
+  WebServerEIP:
+    Type: AWS::EC2::EIP
+
+  EIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref WebServerInstance
+      EIP: !Ref WebServerEIP
+
+Outputs:
+  PrivateIP:
+    Description: Private IPv4 address of the Apache EC2 instance
+    Value: !GetAtt WebServerInstance.PrivateIp
+
+  PublicDNS:
+    Description: Public DNS name of the Apache EC2 instance
+    Value: !GetAtt WebServerInstance.PublicDnsName
+
+  ElasticIP:
+    Description: Elastic IP associated with the EC2 instance
+    Value: !Ref WebServerEIP
